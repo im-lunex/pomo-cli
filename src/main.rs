@@ -15,6 +15,14 @@ struct Config {
     pet_name: String,
 }
 
+// main page and the actual timer or mechanism page
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum CurrentScreen {
+    #[default]
+    Main,
+    Mech,
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -147,6 +155,7 @@ jgs\__/'---'\__/
 
 struct App {
     selecting: bool,
+    screen: CurrentScreen,
     pets: Vec<Pet>,
     selected_index: usize,
     pet: Pet,
@@ -164,6 +173,7 @@ impl App {
         let full_text = pet.catchphrase.to_string();
         Self {
             selecting: false,
+            screen: CurrentScreen::Main,
             pets,
             selected_index,
             pet,
@@ -204,8 +214,15 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> std::io::Result<()> {
                     KeyCode::Char('q') | KeyCode::Esc => {
                         if app.selecting {
                             app.selecting = false;
+                        } else if app.screen == CurrentScreen::Mech {
+                            app.screen = CurrentScreen::Main;
                         } else {
                             break;
+                        }
+                    }
+                    KeyCode::Char('t') => {
+                        if !app.selecting {
+                            app.screen = CurrentScreen::Mech; // get the the actual mechanism
                         }
                     }
                     KeyCode::Char('s') => {
@@ -244,7 +261,6 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> std::io::Result<()> {
 }
 
 // Main Ui
-
 fn main_frame(frame: &mut Frame, app: &App) {
     let area = frame.area();
 
@@ -253,39 +269,55 @@ fn main_frame(frame: &mut Frame, app: &App) {
         .border_style(Style::default().fg(Color::Magenta))
         .title_top(Line::from("Pomo").right_aligned())
         .title_bottom(
-            Line::from(format!(
-                "Current Pet: {} | Press 's' to Switch Pet | 'q' to Quit",
-                app.pet.name
-            ))
+            Line::from(match app.screen {
+                CurrentScreen::Main => format!(
+                    "Current Pet: {} | Press 's' to Switch Pet | 't' to Start Focus | 'q' to Quit",
+                    app.pet.name
+                ),
+                CurrentScreen::Mech => {
+                    format!("{} is watching you... | Press 'q' to Return", app.pet.name).to_string()
+                }
+            })
             .centered(),
         );
 
     let inner_area = main_block.inner(area);
     frame.render_widget(main_block, area);
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(8),
-            Constraint::Length(1),
-            Constraint::Min(0),
-        ])
-        .split(inner_area);
+    match app.screen {
+        CurrentScreen::Main => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(8),
+                    Constraint::Length(1),
+                    Constraint::Min(0),
+                ])
+                .split(inner_area);
 
-    let pet_widget = Paragraph::new(app.pet.ascii)
-        .style(Style::default().fg(Color::Cyan))
-        .centered();
+            let pet_widget = Paragraph::new(app.pet.ascii)
+                .style(Style::default().fg(Color::Cyan))
+                .centered();
 
-    let greeting_widget = Paragraph::new(app.full_text.clone()).centered();
-    let inst_widget = Paragraph::new("Press [t] to start focusing").centered();
+            let greeting_widget = Paragraph::new(app.full_text.clone()).centered();
+            let inst_widget = Paragraph::new("Press [t] to start focusing").centered();
 
-    frame.render_widget(pet_widget, chunks[0]);
-    frame.render_widget(greeting_widget, chunks[1]);
-    frame.render_widget(inst_widget, chunks[2]);
+            frame.render_widget(pet_widget, chunks[0]);
+            frame.render_widget(greeting_widget, chunks[1]);
+            frame.render_widget(inst_widget, chunks[2]);
 
-    if app.selecting {
-        let select_widget = Paragraph::new(select_lines(app)).left_aligned();
-        frame.render_widget(select_widget, chunks[2]);
+            if app.selecting {
+                let select_widget = Paragraph::new(select_lines(app)).left_aligned();
+                frame.render_widget(select_widget, chunks[2]);
+            }
+        }
+        CurrentScreen::Mech => {
+            let timer_widget = Paragraph::new(format!("{} will help you focus now", app.pet.name))
+                .style(Style::default().fg(Color::Green))
+                .centered();
+
+            frame.render_widget(timer_widget, inner_area);
+        }
     }
 }
 
