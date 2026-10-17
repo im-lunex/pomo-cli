@@ -2,7 +2,7 @@ use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
+    style::{Color, Style, Stylize},
     text::Line,
     widgets::{Block, Borders, Paragraph},
 };
@@ -312,11 +312,47 @@ fn main_frame(frame: &mut Frame, app: &App) {
             }
         }
         CurrentScreen::Mech => {
-            let timer_widget = Paragraph::new(format!("{} will help you focus now", app.pet.name))
-                .style(Style::default().fg(Color::Green))
+            let horizontal_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Length(48), Constraint::Min(0)])
+                .split(inner_area);
+
+            let left_sidebar_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(8), Constraint::Min(6)])
+                .split(horizontal_chunks[0]);
+
+            let pet_widget = Paragraph::new(app.pet.ascii)
+                .style(Style::default().fg(Color::Cyan))
                 .centered();
 
-            frame.render_widget(timer_widget, inner_area);
+            let tell_it_to_have_the_pref =
+                format!("Customize your work Session from the right pane ->");
+
+            let pet_chat_box = Paragraph::new(tell_it_to_have_the_pref)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Green))
+                        .title(format!(" {} ", app.pet.name)),
+                )
+                .wrap(ratatui::widgets::Wrap { trim: true });
+
+            let right_content = format!("What kind of session are you planning today?").green();
+
+            let right_widget = Paragraph::new(right_content)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::DarkGray))
+                        .title(" Workspace "),
+                )
+                .centered()
+                .wrap(ratatui::widgets::Wrap { trim: true });
+
+            frame.render_widget(pet_widget, left_sidebar_chunks[0]);
+            frame.render_widget(pet_chat_box, left_sidebar_chunks[1]);
+            frame.render_widget(right_widget, horizontal_chunks[1]);
         }
     }
 }
