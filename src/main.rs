@@ -2,7 +2,7 @@ use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout},
-    style::{Color, Style, Stylize},
+    style::{Color, Style},
     text::Line,
     widgets::{Block, Borders, Paragraph},
 };
@@ -160,6 +160,8 @@ struct App {
     selected_index: usize,
     pet: Pet,
     full_text: String,
+    session_repeatation_buff: String, // how meny seasion do we want to have
+    session_repeatation: String,
 }
 
 impl App {
@@ -178,6 +180,8 @@ impl App {
             selected_index,
             pet,
             full_text,
+            session_repeatation_buff: String::new(),
+            session_repeatation: String::new(),
         }
     }
 
@@ -210,6 +214,21 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> std::io::Result<()> {
 
         if event::poll(tick_rate)? {
             if let Event::Key(key) = event::read()? {
+                if app.screen == CurrentScreen::Mech {
+                    match key.code {
+                        KeyCode::Char(c) => {
+                            app.session_repeatation_buff.push(c);
+                        }
+                        KeyCode::Backspace => {
+                            app.session_repeatation_buff.pop();
+                        }
+                        KeyCode::Enter => {
+                            app.session_repeatation = app.session_repeatation_buff.clone();
+                            app.session_repeatation_buff.clear();
+                        }
+                        _ => {}
+                    }
+                }
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => {
                         if app.selecting {
@@ -338,21 +357,31 @@ fn main_frame(frame: &mut Frame, app: &App) {
                 )
                 .wrap(ratatui::widgets::Wrap { trim: true });
 
-            let right_content = format!("What kind of session are you planning today?").green();
+            frame.render_widget(pet_widget, left_sidebar_chunks[0]);
+            frame.render_widget(pet_chat_box, left_sidebar_chunks[1]);
 
-            let right_widget = Paragraph::new(right_content)
+            let workspace_content = format!(
+                "How meny sessions do you want? (session means working session. wont count breaks) \n\n\
+         Session Count: {}\n\n\
+         > {}_",
+                if app.session_repeatation.is_empty() {
+                    "None"
+                } else {
+                    &app.session_repeatation
+                },
+                app.session_repeatation_buff
+            );
+
+            let workspace_widget = Paragraph::new(workspace_content)
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
                         .border_style(Style::default().fg(Color::DarkGray))
                         .title(" Workspace "),
                 )
-                .centered()
                 .wrap(ratatui::widgets::Wrap { trim: true });
 
-            frame.render_widget(pet_widget, left_sidebar_chunks[0]);
-            frame.render_widget(pet_chat_box, left_sidebar_chunks[1]);
-            frame.render_widget(right_widget, horizontal_chunks[1]);
+            frame.render_widget(workspace_widget, horizontal_chunks[1]);
         }
     }
 }
