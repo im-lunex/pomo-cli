@@ -21,6 +21,8 @@ enum CurrentScreen {
     #[default]
     Main,
     Mech,
+    TimerScreen,
+    Completed,
 }
 
 // space for workspace input handling
@@ -174,6 +176,13 @@ struct App {
     break_time_buff: String,
     break_time: String,
     input_step: MechInputStep,
+    // timer things
+    is_paused: bool,
+    is_work_phase: bool,
+    current_session: usize,
+    target_sessions: usize,
+    remaining_secs: u64,
+    last_tick: std::time::Instant,
 }
 
 impl App {
@@ -197,6 +206,12 @@ impl App {
             break_time_buff: String::new(),
             break_time: String::new(),
             input_step: MechInputStep::SessionCount,
+            is_paused: false,
+            is_work_phase: true,
+            current_session: 1,
+            target_sessions: 1,
+            remaining_secs: 25 * 60, // default 25 mins - all sugesst this
+            last_tick: std::time::Instant::now(),
         }
     }
 
@@ -227,8 +242,58 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> std::io::Result<()> {
     loop {
         terminal.draw(|frame| main_frame(frame, app))?;
 
+        if app.screen == CurrentScreen::TimerScreen && !app.is_paused {
+            if app.last_tick.elapsed() >= Duration::from_secs(1) {
+                if app.remaining_secs > 0 {
+                    app.remaining_secs -= 1;
+                } else {
+                    if app.is_work_phase {
+                        let break_mins: u64 = app.break_time.parse().unwrap_or(5);
+                        app.remaining_secs = break_mins * 60;
+                        app.is_work_phase = false;
+                    } else {
+                        app.current_session += 1;
+                        if app.current_session > app.target_sessions {
+                            app.screen = CurrentScreen::Completed;
+                        } else {
+                            app.remaining_secs = 25 * 60;
+                            app.is_work_phase = true;
+                        }
+                    }
+                }
+                app.last_tick = std::time::Instant::now();
+            }
+        }
+
         if event::poll(tick_rate)? {
             if let Event::Key(key) = event::read()? {
+                if app.screen == CurrentScreen::TimerScreen {
+                    match key.code {
+                        KeyCode::Char('p') => {
+                            app.is_paused = true;
+                            continue;
+                        }
+                        KeyCode::Char('c') => {
+                            app.is_paused = false;
+                            app.last_tick = std::time::Instant::now();
+                            continue;
+                        }
+                        KeyCode::Char('q') | KeyCode::Esc => {
+                            app.screen = CurrentScreen::Main;
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+                if app.screen == CurrentScreen::Completed {
+                    match key.code {
+                        KeyCode::Enter | KeyCode::Char('q') | KeyCode::Esc => {
+                            app.screen = CurrentScreen::Main;
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
                 if app.screen == CurrentScreen::Mech {
                     match key.code {
                         KeyCode::Char(c) => match app.input_step {
@@ -266,7 +331,17 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> std::io::Result<()> {
                                 app.break_time_buff.clear();
                                 app.input_step = MechInputStep::Ready;
                             }
-                            MechInputStep::Ready => {}
+                            MechInputStep::Ready => {
+                                app.screen = CurrentScreen::TimerScreen;
+                                app.target_sessions = app.session_repeatation.parse().unwrap_or(1);
+                                let break_mins: u64 = app.break_time.parse().unwrap_or(5);
+
+                                app.current_session = 1;
+                                app.is_work_phase = true;
+                                app.remaining_secs = 25 * 60;
+                                app.is_paused = false;
+                                app.last_tick = std::time::Instant::now();
+                            }
                         },
                         _ => {}
                     }
@@ -337,6 +412,12 @@ fn main_frame(frame: &mut Frame, app: &App) {
                 ),
                 CurrentScreen::Mech => {
                     format!("{} is watching you... | Press 'q' to Return", app.pet.name).to_string()
+                }
+                CurrentScreen::TimerScreen => {
+                    format!("{} is watching you... | Press 'p' to pause | Press 'c' to continue | Press 'q' to quite", app.pet.name).to_string()
+                }
+                CurrentScreen::Completed => {
+                    format!("Press 'q' to get back to Main window")
                 }
             })
             .centered(),
@@ -420,7 +501,7 @@ fn main_frame(frame: &mut Frame, app: &App) {
                      ✓ Session Count: {}\n\n\
                      Break Time (mins): {}\n\
                      > {}_\n\n\
-                     [Press Enter to confirm]",
+                     [Press Enter to final the config]",
                     app.session_repeatation,
                     if app.break_time.is_empty() {
                         "None"
@@ -431,9 +512,9 @@ fn main_frame(frame: &mut Frame, app: &App) {
                 ),
                 MechInputStep::Ready => format!(
                     "Config Done!\n\n\
-                     ✓ Session Count: {}\n\
-                     ✓ Break Time: {} mins\n\n\
-                     Less start focusing.",
+     ✓ Session Count: {}\n\
+     ✓ Break Time: {} mins\n\n\
+     > Press [Enter] to start focusing!",
                     app.session_repeatation, app.break_time
                 ),
             };
@@ -448,6 +529,129 @@ fn main_frame(frame: &mut Frame, app: &App) {
                 .wrap(ratatui::widgets::Wrap { trim: true });
 
             frame.render_widget(workspace_widget, horizontal_chunks[1]);
+        }
+
+        CurrentScreen::TimerScreen => {
+            let horizontal_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Length(48), Constraint::Min(0)])
+                .split(inner_area);
+
+            let left_sidebar_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(8), Constraint::Min(6)])
+                .split(horizontal_chunks[0]);
+
+            let pet_widget = Paragraph::new(app.pet.ascii)
+                .style(Style::default().fg(Color::Cyan))
+                .centered();
+
+            let pet_chat_box = Paragraph::new(if app.is_work_phase {
+                app.pet.catchphrase
+            } else {
+                app.pet.break_time
+            })
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Green))
+                    .title(format!(" {} ", app.pet.name)),
+            )
+            .wrap(ratatui::widgets::Wrap { trim: true });
+
+            frame.render_widget(pet_widget, left_sidebar_chunks[0]);
+            frame.render_widget(pet_chat_box, left_sidebar_chunks[1]);
+
+            let minutes = app.remaining_secs / 60;
+            let seconds = app.remaining_secs % 60;
+            let time_str = format!("{:02}:{:02}", minutes, seconds);
+
+            let phase_title = if app.is_work_phase {
+                "🔥 FOCUS SESSION"
+            } else {
+                "☕ BREAK TIME"
+            };
+            let status_str = if app.is_paused { " (PAUSED) " } else { "" };
+
+            let timer_content = format!(
+                "\n{}{} \n\n\
+         ┌─────────────┐\n\
+         │   {}   │\n\
+         └─────────────┘\n\n\
+         Session: {} / {}\n\
+         Break Target: {} mins\n\n\
+         Controls: [p] Pause | [c] Continue | [q] Quit",
+                phase_title,
+                status_str,
+                time_str,
+                app.current_session,
+                app.target_sessions,
+                app.break_time
+            );
+
+            let timer_widget = Paragraph::new(timer_content)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(if app.is_work_phase {
+                            Color::Yellow
+                        } else {
+                            Color::Green
+                        }))
+                        .title(" Live Timer Workspace "),
+                )
+                .centered()
+                .wrap(ratatui::widgets::Wrap { trim: true });
+
+            frame.render_widget(timer_widget, horizontal_chunks[1]);
+        }
+        CurrentScreen::Completed => {
+            let horizontal_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Length(48), Constraint::Min(0)])
+                .split(inner_area);
+
+            let left_sidebar_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(8), Constraint::Min(6)])
+                .split(horizontal_chunks[0]);
+
+            let pet_widget = Paragraph::new(app.pet.ascii)
+                .style(Style::default().fg(Color::Cyan))
+                .centered();
+
+            let pet_chat_box = Paragraph::new("Woohoo! You legend. We crushed all the sessions!")
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Yellow))
+                        .title(format!(" {} ", app.pet.name)),
+                )
+                .wrap(ratatui::widgets::Wrap { trim: true });
+
+            frame.render_widget(pet_widget, left_sidebar_chunks[0]);
+            frame.render_widget(pet_chat_box, left_sidebar_chunks[1]);
+
+            let complete_content = format!(
+                "\n🎉 YOU HAVE COMPLETED THE FULL WORK SESSION! 🎉\n\n\
+         Total Sessions Finished: {}\n\n\
+         Amazing discipline and deep focus!\n\
+         Time to celebrate or take a well-earned rest.\n\n\
+         > Press [Enter] or [q] to return to Main Menu",
+                app.target_sessions
+            );
+
+            let complete_widget = Paragraph::new(complete_content)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Magenta))
+                        .title(" Mission Accomplished! "),
+                )
+                .centered()
+                .wrap(ratatui::widgets::Wrap { trim: true });
+
+            frame.render_widget(complete_widget, horizontal_chunks[1]);
         }
     }
 }
