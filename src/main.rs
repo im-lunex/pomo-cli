@@ -16,11 +16,20 @@ struct Config {
 }
 
 // main page and the actual timer or mechanism page
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, PartialEq)]
 enum CurrentScreen {
     #[default]
     Main,
     Mech,
+}
+
+// space for workspace input handling
+#[derive(Default)]
+enum MechInputStep {
+    #[default]
+    SessionCount,
+    BreakTime,
+    Ready,
 }
 
 impl Default for Config {
@@ -64,7 +73,7 @@ pub struct Pet {
     pub ascii: &'static str,
     pub personality: &'static str,
     pub catchphrase: &'static str,
-    pub power_up: &'static str,
+    pub break_time: &'static str,
 }
 
 pub fn get_pets() -> Vec<Pet> {
@@ -79,7 +88,7 @@ pub fn get_pets() -> Vec<Pet> {
 "#,
             personality: "Playful, energetic, easily distracted",
             catchphrase: "Finish the work. Then we can play 🐾",
-            power_up: "Catnap: Recommends short 5-minute quick refresh breaks",
+            break_time: "Its break time -- what would you love to have a coffee or a catroll",
         },
         Pet {
             name: "Shelly",
@@ -92,7 +101,7 @@ pub fn get_pets() -> Vec<Pet> {
 "#,
             personality: "Calm, patient, wise, steady pace",
             catchphrase: "Slow and steady wins the race. Take a breath...",
-            power_up: "Deep Work: 60-minute low-stress endurance sessions",
+            break_time: "Finally! we can rest for a bit",
         },
         Pet {
             name: "Barkley",
@@ -105,7 +114,7 @@ pub fn get_pets() -> Vec<Pet> {
 "#,
             personality: "Ultra-loyal, enthusiastic, cheering team player",
             catchphrase: "Woof woof! You're doing amazing, let's focus again! 🎾",
-            power_up: "Fetch Mode: Gives rewarding virtual treats after every timer",
+            break_time: "Ye! Break time ---",
         },
         Pet {
             name: "Hoot",
@@ -117,7 +126,7 @@ pub fn get_pets() -> Vec<Pet> {
 "#,
             personality: "Intellectual, night owl, detail-oriented",
             catchphrase: "Hoot! Knowledge is built one pomodoro at a time. 🦉",
-            power_up: "Night Owl Study: Custom dimmed palette for late-night focus",
+            break_time: "Hoot! Breaks are really important for holding the focus for long time...",
         },
         Pet {
             name: "Hop",
@@ -129,7 +138,7 @@ pub fn get_pets() -> Vec<Pet> {
 "#,
             personality: "Gentle, swift, encouraging",
             catchphrase: "Hop hop! Let's leap over these tasks together! 🐇",
-            power_up: "Sprint Mode: Fast 15-minute ultra-focused intervals",
+            break_time: "Hop! Hop! Less have a quick break then we start again.. Hop!",
         },
         Pet {
             name: "Linus Torvalds",
@@ -146,7 +155,7 @@ jgs\__/'---'\__/
 "#,
             personality: "UnGentle, Abusing, Cracked",
             catchphrase: "Ay! why am i here? who put me with this vibecoder? aaaaaaaaaaaaa...",
-            power_up: "Dont even think that im gonna help you to do anything....",
+            break_time: "Look this lazy ass started to have break again.. Ay get back to work...",
         },
     ]
 }
@@ -160,8 +169,11 @@ struct App {
     selected_index: usize,
     pet: Pet,
     full_text: String,
-    session_repeatation_buff: String, // how meny seasion do we want to have
+    session_repeatation_buff: String,
     session_repeatation: String,
+    break_time_buff: String,
+    break_time: String,
+    input_step: MechInputStep,
 }
 
 impl App {
@@ -182,6 +194,9 @@ impl App {
             full_text,
             session_repeatation_buff: String::new(),
             session_repeatation: String::new(),
+            break_time_buff: String::new(),
+            break_time: String::new(),
+            input_step: MechInputStep::SessionCount,
         }
     }
 
@@ -216,16 +231,43 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> std::io::Result<()> {
             if let Event::Key(key) = event::read()? {
                 if app.screen == CurrentScreen::Mech {
                     match key.code {
-                        KeyCode::Char(c) => {
-                            app.session_repeatation_buff.push(c);
-                        }
-                        KeyCode::Backspace => {
-                            app.session_repeatation_buff.pop();
-                        }
-                        KeyCode::Enter => {
-                            app.session_repeatation = app.session_repeatation_buff.clone();
-                            app.session_repeatation_buff.clear();
-                        }
+                        KeyCode::Char(c) => match app.input_step {
+                            MechInputStep::SessionCount => {
+                                // only accept num - its tuff to have input error in ratatui
+                                if c.is_ascii_digit() {
+                                    app.session_repeatation_buff.push(c);
+                                }
+                            }
+                            MechInputStep::BreakTime => {
+                                // only accept num - its tuff to have input error in ratatui
+                                if c.is_ascii_digit() {
+                                    app.break_time_buff.push(c);
+                                }
+                            }
+                            MechInputStep::Ready => {}
+                        },
+                        KeyCode::Backspace => match app.input_step {
+                            MechInputStep::SessionCount => {
+                                app.session_repeatation_buff.pop();
+                            }
+                            MechInputStep::BreakTime => {
+                                app.break_time_buff.pop();
+                            }
+                            MechInputStep::Ready => {}
+                        },
+                        KeyCode::Enter => match app.input_step {
+                            MechInputStep::SessionCount => {
+                                app.session_repeatation = app.session_repeatation_buff.clone();
+                                app.session_repeatation_buff.clear();
+                                app.input_step = MechInputStep::BreakTime;
+                            }
+                            MechInputStep::BreakTime => {
+                                app.break_time = app.break_time_buff.clone();
+                                app.break_time_buff.clear();
+                                app.input_step = MechInputStep::Ready;
+                            }
+                            MechInputStep::Ready => {}
+                        },
                         _ => {}
                     }
                 }
@@ -241,7 +283,7 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> std::io::Result<()> {
                     }
                     KeyCode::Char('t') => {
                         if !app.selecting {
-                            app.screen = CurrentScreen::Mech; // get the the actual mechanism
+                            app.screen = CurrentScreen::Mech; // get the actual mechanism
                         }
                     }
                     KeyCode::Char('s') => {
@@ -360,17 +402,41 @@ fn main_frame(frame: &mut Frame, app: &App) {
             frame.render_widget(pet_widget, left_sidebar_chunks[0]);
             frame.render_widget(pet_chat_box, left_sidebar_chunks[1]);
 
-            let workspace_content = format!(
-                "How meny sessions do you want? (session means working session. wont count breaks) \n\n\
-         Session Count: {}\n\n\
-         > {}_",
-                if app.session_repeatation.is_empty() {
-                    "None"
-                } else {
-                    &app.session_repeatation
-                },
-                app.session_repeatation_buff
-            );
+            let workspace_content = match app.input_step {
+                MechInputStep::SessionCount => format!(
+                    "How many sessions do you want? (working sessions, excluding breaks)\n\n\
+                     Session Count: {}\n\
+                     > {}_\n\n\
+                     [Press Enter to set Break Time]",
+                    if app.session_repeatation.is_empty() {
+                        "None"
+                    } else {
+                        &app.session_repeatation
+                    },
+                    app.session_repeatation_buff
+                ),
+                MechInputStep::BreakTime => format!(
+                    "How long should each break be? (in minutes)\n\n\
+                     ✓ Session Count: {}\n\n\
+                     Break Time (mins): {}\n\
+                     > {}_\n\n\
+                     [Press Enter to confirm]",
+                    app.session_repeatation,
+                    if app.break_time.is_empty() {
+                        "None"
+                    } else {
+                        &app.break_time
+                    },
+                    app.break_time_buff
+                ),
+                MechInputStep::Ready => format!(
+                    "Config Done!\n\n\
+                     ✓ Session Count: {}\n\
+                     ✓ Break Time: {} mins\n\n\
+                     Less start focusing.",
+                    app.session_repeatation, app.break_time
+                ),
+            };
 
             let workspace_widget = Paragraph::new(workspace_content)
                 .block(
