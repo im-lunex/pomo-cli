@@ -7,7 +7,10 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 use serde::{Deserialize, Serialize};
-use std::{fs, time::Duration};
+use std::{
+    fs,
+    time::{Duration, Instant},
+};
 
 // config
 #[derive(Deserialize, Serialize)]
@@ -15,7 +18,7 @@ struct Config {
     pet_name: String,
 }
 
-// main page and the actual timer or mechanism page
+// screens
 #[derive(Default, PartialEq)]
 enum CurrentScreen {
     #[default]
@@ -66,16 +69,35 @@ fn save_config(pet_name: &str) {
     }
 }
 
-// data
+// get exact hour for is_night_time()
+fn get_current_hour() -> u8 {
+    let duration = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs_in_day = duration.as_secs() % 86400;
 
+    let local_secs = (secs_in_day + 21600) % 86400;
+    (local_secs / 3600) as u8
+}
+
+fn is_night_time() -> bool {
+    let hour = get_current_hour();
+    hour >= 23 || hour < 5
+}
+
+// Pet data
 #[derive(Clone, Copy)]
 pub struct Pet {
     pub name: &'static str,
     pub species: &'static str,
     pub ascii: &'static str,
+    pub ascii_blink: &'static str,
     pub personality: &'static str,
     pub catchphrase: &'static str,
     pub break_time: &'static str,
+    pub pause_msg: &'static str,
+    pub resume_msg: &'static str,
+    pub interact_msg: &'static str,
 }
 
 pub fn get_pets() -> Vec<Pet> {
@@ -88,9 +110,17 @@ pub fn get_pets() -> Vec<Pet> {
  ( o.o ) 
   > ^ <  
 "#,
+            ascii_blink: r#"
+  /\_/\  
+ ( -.- ) 
+  > ^ <  
+"#,
             personality: "Playful, energetic, easily distracted",
-            catchphrase: "Finish the work. Then we can play 🐾",
-            break_time: "Its break time -- what would you love to have a coffee or a catroll",
+            catchphrase: "Look, if we knock out this focus block, I promise we can tear up some toilet paper roll later. Deal?",
+            break_time: "Okay, break time! Do you want coffee, or are we staring blankly at the wall pretending to meditate?",
+            pause_msg: "Hey! Who hit pause? The mouse was right in front of us! Don't blue-ball my hunting instincts.",
+            resume_msg: "Fine, fine, let's get back to it. Tap the keyboard or I'm stepping on the power button.",
+            interact_msg: "*Knocks your coffee mug slightly closer to the edge* Oh, sorry, was that important? Back to work.",
         },
         Pet {
             name: "Shelly",
@@ -101,22 +131,40 @@ pub fn get_pets() -> Vec<Pet> {
   ( o   o )  🐢
    \_____/
 "#,
+            ascii_blink: r#"
+    _____
+   /     \
+  ( -   - )  🐢
+   \_____/
+"#,
             personality: "Calm, patient, wise, steady pace",
-            catchphrase: "Slow and steady wins the race. Take a breath...",
-            break_time: "Finally! we can rest for a bit",
+            catchphrase: "Rome wasn't built in a day, and neither is clean code. Breathe in, breathe out, let's move an inch.",
+            break_time: "Shell time. Retract into your sweater, drop your shoulders, and forget deadlines exist for 5 minutes.",
+            pause_msg: "Taking a breather? Smart. Just don't get *too* comfy, or we'll wake up next winter.",
+            resume_msg: "Alright, poke the head back out of the shell. One quiet step at a time.",
+            interact_msg: "*Slowly blinks with absolute maternal disappointment disguised as profound patience* You're doing fine, kid.",
         },
         Pet {
             name: "Barkley",
             species: "Dog",
             ascii: r#"
- /^\_/\^\
+/^\_/\^\
 (  o.o  )
- )  _  (
+ )  _   (
+ /     \
+"#,
+            ascii_blink: r#"
+/^\_/\^\
+(  -.-  )
+ )  _   (
  /     \
 "#,
             personality: "Ultra-loyal, enthusiastic, cheering team player",
-            catchphrase: "Woof woof! You're doing amazing, let's focus again! 🎾",
-            break_time: "Ye! Break time ---",
+            catchphrase: "AWOOO! We got this! Look at how many lines of code you wrote! You're basically a tech wizard!",
+            break_time: "BREAK TIME! Quick, look out the window, is that a squirrel?! No? Okay, let's do jumping jacks!",
+            pause_msg: "Wait, why stopped?! Are we getting treats? No treats?! Then why are we stopped?! Let's go!",
+            resume_msg: "YES! Zoomies activated! Let's shred this ticket and conquer the backlog! 🎾",
+            interact_msg: "*Puts muddy paws right on your lap and stares into your soul* You're amazing! Can we eat cheese later?",
         },
         Pet {
             name: "Hoot",
@@ -126,9 +174,17 @@ pub fn get_pets() -> Vec<Pet> {
  (o.o )
  (>   <)
 "#,
+            ascii_blink: r#"
+  /\_/\
+ (-.- )
+ (>   <)
+"#,
             personality: "Intellectual, night owl, detail-oriented",
-            catchphrase: "Hoot! Knowledge is built one pomodoro at a time. 🦉",
-            break_time: "Hoot! Breaks are really important for holding the focus for long time...",
+            catchphrase: "Fascinating. Another ticket closed. The architecture is slowly forming like a delicate web of tech debt.",
+            break_time: "Refuel time. Rest your eyes from the blue light before you start hallucinating syntax errors.",
+            pause_msg: "Interrupting a deep train of thought? Bold move. Hope you remember your context stack.",
+            resume_msg: "Ah, returning to the ethereal glow of the terminal. Excellent. Let's synthesize some logic.",
+            interact_msg: "*Rotates head 180 degrees* I see you opening tab #47 on StackOverflow. Let's refocus, shall we?",
         },
         Pet {
             name: "Hop",
@@ -138,9 +194,17 @@ pub fn get_pets() -> Vec<Pet> {
  ( •_•)
 />🐰
 "#,
+            ascii_blink: r#"
+ (\_/) 
+ ( -.-)
+/>🐰
+"#,
             personality: "Gentle, swift, encouraging",
-            catchphrase: "Hop hop! Let's leap over these tasks together! 🐇",
-            break_time: "Hop! Hop! Less have a quick break then we start again.. Hop!",
+            catchphrase: "Boing! Let's hop over these annoying little bugs like they're tiny puddles!",
+            break_time: "Time to stretch those legs! Grab a snack or bounce around the room before our next leap!",
+            pause_msg: "Did a sudden noise scare you? Don't freeze like a rabbit in headlights, we've got this!",
+            resume_msg: "Ears up, eyes forward! Let's hop right back into the flow state!",
+            interact_msg: "*Twitches nose rapidly* You're typing so fast I think your keyboard is smoking. Go you!",
         },
         Pet {
             name: "Linus Torvalds",
@@ -150,27 +214,40 @@ pub fn get_pets() -> Vec<Pet> {
        /     \
        \.@-@./
        /`\_/`\
-     //  _  \\
+     //  _   \\
+    | \     )(_
+   /`\_`>  </ \
+jgs\__/'---'\__/
+"#,
+            ascii_blink: r#"
+        .---.
+       /     \
+       \.-.-./
+       /`\_/`\
+     //  _   \\
     | \     )(_
    /`\_`>  </ \
 jgs\__/'---'\__/
 "#,
             personality: "UnGentle, Abusing, Cracked",
             catchphrase: "Ay! why am i here? who put me with this vibecoder? aaaaaaaaaaaaa...",
-            break_time: "Look this lazy ass started to have break again.. Ay get back to work...",
+            break_time: "Oh look, a break. Of course you need a break, you've barely written three lines.",
+            pause_msg: "Dakh hauar polay abar pause kore..",
+            resume_msg: "Shamne paile reee...",
+            interact_msg: "oi oi ... Gaye hat dibi na akdom akdom mamla dia dimu...",
         },
     ]
 }
 
-// App init
-
+// app init
 struct App {
     selecting: bool,
     screen: CurrentScreen,
     pets: Vec<Pet>,
     selected_index: usize,
     pet: Pet,
-    full_text: String,
+    pet_message: String,
+    frame_counter: usize,
     session_repeatation_buff: String,
     session_repeatation: String,
     break_time_buff: String,
@@ -182,25 +259,39 @@ struct App {
     current_session: usize,
     target_sessions: usize,
     remaining_secs: u64,
-    last_tick: std::time::Instant,
+    last_tick: Instant,
 }
 
 impl App {
     fn new(config: &Config) -> Self {
         let pets = get_pets();
-        let selected_index = pets
+        let mut selected_index = pets
             .iter()
             .position(|p| p.name.eq_ignore_ascii_case(&config.pet_name))
             .unwrap_or(0);
+
+        // the hoot is only in night
+        if is_night_time() {
+            if let Some(hoot_idx) = pets.iter().position(|p| p.name == "Hoot") {
+                selected_index = hoot_idx;
+            }
+        }
+
         let pet = pets[selected_index];
-        let full_text = pet.catchphrase.to_string();
+        let mut pet_message = pet.catchphrase.to_string();
+
+        if is_night_time() {
+            pet_message = "Hoot! ki vai eto raite ki korbar ligga aiso ?".to_string();
+        }
+
         Self {
             selecting: false,
             screen: CurrentScreen::Main,
             pets,
             selected_index,
             pet,
-            full_text,
+            pet_message,
+            frame_counter: 0,
             session_repeatation_buff: String::new(),
             session_repeatation: String::new(),
             break_time_buff: String::new(),
@@ -210,22 +301,27 @@ impl App {
             is_work_phase: true,
             current_session: 1,
             target_sessions: 1,
-            remaining_secs: 25 * 60, // default 25 mins - all sugesst this
-            last_tick: std::time::Instant::now(),
+            remaining_secs: 25 * 60,
+            last_tick: Instant::now(),
         }
     }
 
-    // set selected pet
+    // set selected pet with night-mode restriction check
     fn select_pet(&mut self, index: usize) {
+        if is_night_time() && self.pets[index].name != "Hoot" {
+            self.pet_message =
+                "Hoot! nh shob ghum vai, ami asi dine ghumani raite jagi...".to_string();
+            return;
+        }
+
         self.selected_index = index;
         self.pet = self.pets[index];
-        self.full_text = self.pet.catchphrase.to_string();
+        self.pet_message = self.pet.catchphrase.to_string();
         save_config(self.pet.name);
     }
 }
 
-// Main frame
-
+// Main
 fn main() -> color_eyre::Result<()> {
     let config = load_config();
     let mut app = App::new(&config);
@@ -240,6 +336,7 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> std::io::Result<()> {
     let tick_rate = Duration::from_millis(30);
 
     loop {
+        app.frame_counter = app.frame_counter.wrapping_add(1);
         terminal.draw(|frame| main_frame(frame, app))?;
 
         if app.screen == CurrentScreen::TimerScreen && !app.is_paused {
@@ -251,60 +348,73 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> std::io::Result<()> {
                         let break_mins: u64 = app.break_time.parse().unwrap_or(5);
                         app.remaining_secs = break_mins * 60;
                         app.is_work_phase = false;
+                        app.pet_message = app.pet.break_time.to_string();
                     } else {
                         app.current_session += 1;
                         if app.current_session > app.target_sessions {
                             app.screen = CurrentScreen::Completed;
+                            app.pet_message =
+                                format!("Woohoo! We crushed all {} sessions!", app.target_sessions);
                         } else {
                             app.remaining_secs = 25 * 60;
                             app.is_work_phase = true;
+                            app.pet_message = app.pet.catchphrase.to_string();
                         }
                     }
                 }
-                app.last_tick = std::time::Instant::now();
+                app.last_tick = Instant::now();
             }
         }
 
         if event::poll(tick_rate)? {
             if let Event::Key(key) = event::read()? {
+                // pet it
+                if let KeyCode::Char('f') = key.code {
+                    app.pet_message = app.pet.interact_msg.to_string();
+                }
+
                 if app.screen == CurrentScreen::TimerScreen {
                     match key.code {
                         KeyCode::Char('p') => {
                             app.is_paused = true;
+                            app.pet_message = app.pet.pause_msg.to_string();
                             continue;
                         }
                         KeyCode::Char('c') => {
                             app.is_paused = false;
-                            app.last_tick = std::time::Instant::now();
+                            app.last_tick = Instant::now();
+                            app.pet_message = app.pet.resume_msg.to_string();
                             continue;
                         }
                         KeyCode::Char('q') | KeyCode::Esc => {
                             app.screen = CurrentScreen::Main;
+                            app.pet_message = app.pet.catchphrase.to_string();
                             continue;
                         }
                         _ => {}
                     }
                 }
+
                 if app.screen == CurrentScreen::Completed {
                     match key.code {
                         KeyCode::Enter | KeyCode::Char('q') | KeyCode::Esc => {
                             app.screen = CurrentScreen::Main;
+                            app.pet_message = app.pet.catchphrase.to_string();
                             continue;
                         }
                         _ => {}
                     }
                 }
+
                 if app.screen == CurrentScreen::Mech {
                     match key.code {
                         KeyCode::Char(c) => match app.input_step {
                             MechInputStep::SessionCount => {
-                                // only accept num - its tuff to have input error in ratatui
                                 if c.is_ascii_digit() {
                                     app.session_repeatation_buff.push(c);
                                 }
                             }
                             MechInputStep::BreakTime => {
-                                // only accept num - its tuff to have input error in ratatui
                                 if c.is_ascii_digit() {
                                     app.break_time_buff.push(c);
                                 }
@@ -334,31 +444,40 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> std::io::Result<()> {
                             MechInputStep::Ready => {
                                 app.screen = CurrentScreen::TimerScreen;
                                 app.target_sessions = app.session_repeatation.parse().unwrap_or(1);
-                                let break_mins: u64 = app.break_time.parse().unwrap_or(5);
+                                let _break_mins: u64 = app.break_time.parse().unwrap_or(5);
 
                                 app.current_session = 1;
                                 app.is_work_phase = true;
                                 app.remaining_secs = 25 * 60;
                                 app.is_paused = false;
-                                app.last_tick = std::time::Instant::now();
+                                app.last_tick = Instant::now();
+                                app.pet_message = app.pet.catchphrase.to_string();
                             }
                         },
+                        KeyCode::Char('q') | KeyCode::Esc => {
+                            app.screen = CurrentScreen::Main;
+                            app.pet_message = app.pet.catchphrase.to_string();
+                        }
                         _ => {}
                     }
+                    continue;
                 }
+
+                // screen ctrls
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => {
                         if app.selecting {
                             app.selecting = false;
-                        } else if app.screen == CurrentScreen::Mech {
-                            app.screen = CurrentScreen::Main;
                         } else {
                             break;
                         }
                     }
+                    KeyCode::Char('n') => {
+                        app.screen = CurrentScreen::Completed;
+                    }
                     KeyCode::Char('t') => {
                         if !app.selecting {
-                            app.screen = CurrentScreen::Mech; // get the actual mechanism
+                            app.screen = CurrentScreen::Mech;
                         }
                     }
                     KeyCode::Char('s') => {
@@ -396,7 +515,7 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> std::io::Result<()> {
     Ok(())
 }
 
-// Main Ui
+// Main UI Layout and Rendering
 fn main_frame(frame: &mut Frame, app: &App) {
     let area = frame.area();
 
@@ -407,17 +526,19 @@ fn main_frame(frame: &mut Frame, app: &App) {
         .title_bottom(
             Line::from(match app.screen {
                 CurrentScreen::Main => format!(
-                    "Current Pet: {} | Press 's' to Switch Pet | 't' to Start Focus | 'q' to Quit",
+                    "Current Pet: {} | [s] Switch Pet | [t] Start Focus | [f] Interact | [q] Quit",
                     app.pet.name
                 ),
                 CurrentScreen::Mech => {
-                    format!("{} is watching you... | Press 'q' to Return", app.pet.name).to_string()
+                    format!("{} is watching you... | [q] Return", app.pet.name).to_string()
                 }
-                CurrentScreen::TimerScreen => {
-                    format!("{} is watching you... | Press 'p' to pause | Press 'c' to continue | Press 'q' to quite", app.pet.name).to_string()
-                }
+                CurrentScreen::TimerScreen => format!(
+                    "{} is watching | [p] Pause | [c] Continue | [f] Interact | [q] Quit",
+                    app.pet.name
+                )
+                .to_string(),
                 CurrentScreen::Completed => {
-                    format!("Press 'q' to get back to Main window")
+                    format!("Session Finished! | [Enter] or [q] Return to Main")
                 }
             })
             .centered(),
@@ -425,6 +546,13 @@ fn main_frame(frame: &mut Frame, app: &App) {
 
     let inner_area = main_block.inner(area);
     frame.render_widget(main_block, area);
+
+    let is_blinking = (app.frame_counter / 45) % 2 == 1;
+    let current_ascii = if is_blinking {
+        app.pet.ascii_blink
+    } else {
+        app.pet.ascii
+    };
 
     match app.screen {
         CurrentScreen::Main => {
@@ -437,12 +565,14 @@ fn main_frame(frame: &mut Frame, app: &App) {
                 ])
                 .split(inner_area);
 
-            let pet_widget = Paragraph::new(app.pet.ascii)
+            let pet_widget = Paragraph::new(current_ascii)
                 .style(Style::default().fg(Color::Cyan))
                 .centered();
 
-            let greeting_widget = Paragraph::new(app.full_text.clone()).centered();
-            let inst_widget = Paragraph::new("Press [t] to start focusing").centered();
+            let greeting_widget = Paragraph::new(app.pet_message.clone()).centered();
+            let inst_widget =
+                Paragraph::new("Press [t] to start focusing | Press [f] to pet/interact")
+                    .centered();
 
             frame.render_widget(pet_widget, chunks[0]);
             frame.render_widget(greeting_widget, chunks[1]);
@@ -464,14 +594,11 @@ fn main_frame(frame: &mut Frame, app: &App) {
                 .constraints([Constraint::Length(8), Constraint::Min(6)])
                 .split(horizontal_chunks[0]);
 
-            let pet_widget = Paragraph::new(app.pet.ascii)
+            let pet_widget = Paragraph::new(current_ascii)
                 .style(Style::default().fg(Color::Cyan))
                 .centered();
 
-            let tell_it_to_have_the_pref =
-                format!("Customize your work Session from the right pane ->");
-
-            let pet_chat_box = Paragraph::new(tell_it_to_have_the_pref)
+            let pet_chat_box = Paragraph::new(app.pet_message.clone())
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
@@ -501,7 +628,7 @@ fn main_frame(frame: &mut Frame, app: &App) {
                      ✓ Session Count: {}\n\n\
                      Break Time (mins): {}\n\
                      > {}_\n\n\
-                     [Press Enter to final the config]",
+                     [Press Enter to finalize config]",
                     app.session_repeatation,
                     if app.break_time.is_empty() {
                         "None"
@@ -512,9 +639,9 @@ fn main_frame(frame: &mut Frame, app: &App) {
                 ),
                 MechInputStep::Ready => format!(
                     "Config Done!\n\n\
-     ✓ Session Count: {}\n\
-     ✓ Break Time: {} mins\n\n\
-     > Press [Enter] to start focusing!",
+                     ✓ Session Count: {}\n\
+                     ✓ Break Time: {} mins\n\n\
+                     > Press [Enter] to start focusing!",
                     app.session_repeatation, app.break_time
                 ),
             };
@@ -530,7 +657,6 @@ fn main_frame(frame: &mut Frame, app: &App) {
 
             frame.render_widget(workspace_widget, horizontal_chunks[1]);
         }
-
         CurrentScreen::TimerScreen => {
             let horizontal_chunks = Layout::default()
                 .direction(Direction::Horizontal)
@@ -542,22 +668,18 @@ fn main_frame(frame: &mut Frame, app: &App) {
                 .constraints([Constraint::Length(8), Constraint::Min(6)])
                 .split(horizontal_chunks[0]);
 
-            let pet_widget = Paragraph::new(app.pet.ascii)
+            let pet_widget = Paragraph::new(current_ascii)
                 .style(Style::default().fg(Color::Cyan))
                 .centered();
 
-            let pet_chat_box = Paragraph::new(if app.is_work_phase {
-                app.pet.catchphrase
-            } else {
-                app.pet.break_time
-            })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Green))
-                    .title(format!(" {} ", app.pet.name)),
-            )
-            .wrap(ratatui::widgets::Wrap { trim: true });
+            let pet_chat_box = Paragraph::new(app.pet_message.clone())
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Green))
+                        .title(format!(" {} ", app.pet.name)),
+                )
+                .wrap(ratatui::widgets::Wrap { trim: true });
 
             frame.render_widget(pet_widget, left_sidebar_chunks[0]);
             frame.render_widget(pet_chat_box, left_sidebar_chunks[1]);
@@ -575,12 +697,12 @@ fn main_frame(frame: &mut Frame, app: &App) {
 
             let timer_content = format!(
                 "\n{}{} \n\n\
-         ┌─────────────┐\n\
-         │   {}   │\n\
-         └─────────────┘\n\n\
-         Session: {} / {}\n\
-         Break Target: {} mins\n\n\
-         Controls: [p] Pause | [c] Continue | [q] Quit",
+                 ┌─────────────┐\n\
+                 │   {}   │\n\
+                 └─────────────┘\n\n\
+                 Session: {} / {}\n\
+                 Break Target: {} mins\n\n\
+                 Controls: [p] Pause | [c] Continue | [f] Interact | [q] Quit",
                 phase_title,
                 status_str,
                 time_str,
@@ -616,11 +738,11 @@ fn main_frame(frame: &mut Frame, app: &App) {
                 .constraints([Constraint::Length(8), Constraint::Min(6)])
                 .split(horizontal_chunks[0]);
 
-            let pet_widget = Paragraph::new(app.pet.ascii)
+            let pet_widget = Paragraph::new(current_ascii)
                 .style(Style::default().fg(Color::Cyan))
                 .centered();
 
-            let pet_chat_box = Paragraph::new("Woohoo! You legend. We crushed all the sessions!")
+            let pet_chat_box = Paragraph::new(app.pet_message.clone())
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
@@ -633,11 +755,11 @@ fn main_frame(frame: &mut Frame, app: &App) {
             frame.render_widget(pet_chat_box, left_sidebar_chunks[1]);
 
             let complete_content = format!(
-                "\n🎉 YOU HAVE COMPLETED THE FULL WORK SESSION! 🎉\n\n\
-         Total Sessions Finished: {}\n\n\
-         Amazing discipline and deep focus!\n\
-         Time to celebrate or take a well-earned rest.\n\n\
-         > Press [Enter] or [q] to return to Main Menu",
+                "\n🎉 Yeeee onek kisu sira laiso yeee! 🎉\n\n\
+                 Total Sessions Finished: {}\n\n\
+                 Amazing discipline and deep focus!\n\
+                 Time to celebrate or take a well-earned rest.\n\n\
+                 > Press [Enter] or [q] to return to Main Menu",
                 app.target_sessions
             );
 
@@ -657,17 +779,29 @@ fn main_frame(frame: &mut Frame, app: &App) {
 }
 
 fn select_lines(app: &App) -> Vec<Line<'_>> {
-    let mut lines = vec![Line::from("- Select your pet:")];
+    let night_mode = is_night_time();
+    let header = if night_mode {
+        "- Select your pet (🌙 Night Mode: rate Owl dai ase lagbo ni ?):"
+    } else {
+        "- Select your pet:"
+    };
+
+    let mut lines = vec![Line::from(header)];
     for (i, pet) in app.pets.iter().enumerate() {
+        let is_asleep = night_mode && pet.name != "Hoot";
         let marker = if i == app.selected_index {
             "[*]"
         } else {
             "[ ]"
         };
+        let status_suffix = if is_asleep { " (Asleep 💤)" } else { "" };
         let personality = pet.personality.to_lowercase();
-        let text = format!("{} {} ({})", marker, pet.name, personality);
+        let text = format!("{} {} ({}){}", marker, pet.name, personality, status_suffix);
+
         if i == app.selected_index {
             lines.push(Line::from(text).style(Style::default().fg(Color::Yellow)));
+        } else if is_asleep {
+            lines.push(Line::from(text).style(Style::default().fg(Color::DarkGray)));
         } else {
             lines.push(Line::from(text).style(Style::default().fg(Color::Gray)));
         }
