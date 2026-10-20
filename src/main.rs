@@ -1,3 +1,6 @@
+// A project should be more with logic rathar than other polish soo im not writing the texts or pet
+// messages and ascii - soo used AI on that not agentic oviusly. - So this should be acceptable ig
+
 use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
     DefaultTerminal, Frame,
