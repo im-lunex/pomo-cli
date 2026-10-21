@@ -1,5 +1,5 @@
 [package]
-name = "pomo-cli"
+name = "pmd-cli"
 version = "0.1.0"
 edition = "2021"
 authors = ["im-lunex <imlunex2011@gmail.com>"]
