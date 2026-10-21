@@ -1,13 +1,14 @@
-// A project should be more with logic rathar than other polish soo im not writing the texts or pet
-// messages and ascii - soo used AI on that not agentic oviusly. - So this should be acceptable ig
+// Project should be about logic and building skills soo im not writing the ascii and some of those
+// messages and i used AI(gemini) on that
 
 use crossterm::event::{self, Event, KeyCode};
+use notify_rust::Notification;
 use ratatui::{
-    DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     text::Line,
     widgets::{Block, Borders, Paragraph},
+    DefaultTerminal, Frame,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -153,13 +154,13 @@ pub fn get_pets() -> Vec<Pet> {
             ascii: r#"
 /^\_/\^\
 (  o.o  )
- )  _   (
+ )  _    (
  /     \
 "#,
             ascii_blink: r#"
 /^\_/\^\
 (  -.-  )
- )  _   (
+ )  _    (
  /     \
 "#,
             personality: "Ultra-loyal, enthusiastic, cheering team player",
@@ -265,6 +266,15 @@ struct App {
     last_tick: Instant,
 }
 
+fn send_notification(pet_name: &str, title: &str, body: &str) {
+    let _ = Notification::new()
+        .appname(pet_name)
+        .summary(title)
+        .body(body)
+        .timeout(3000)
+        .show();
+}
+
 impl App {
     fn new(config: &Config) -> Self {
         let pets = get_pets();
@@ -348,20 +358,41 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> std::io::Result<()> {
                     app.remaining_secs -= 1;
                 } else {
                     if app.is_work_phase {
+                        // --- FOCUS SESSION ENDED, BREAK STARTED ---
                         let break_mins: u64 = app.break_time.parse().unwrap_or(5);
                         app.remaining_secs = break_mins * 60;
                         app.is_work_phase = false;
                         app.pet_message = app.pet.break_time.to_string();
+
+                        send_notification(&app.pet.name, "Break Time!", &app.pet.break_time);
                     } else {
                         app.current_session += 1;
                         if app.current_session > app.target_sessions {
                             app.screen = CurrentScreen::Completed;
                             app.pet_message =
                                 format!("Woohoo! We crushed all {} sessions!", app.target_sessions);
+
+                            send_notification(
+                                &app.pet.name,
+                                "Mission Completed!",
+                                &format!(
+                                    "All {} sessions finished successfully!",
+                                    app.target_sessions
+                                ),
+                            );
                         } else {
                             app.remaining_secs = 25 * 60;
                             app.is_work_phase = true;
                             app.pet_message = app.pet.catchphrase.to_string();
+
+                            send_notification(
+                                &app.pet.name,
+                                &format!(
+                                    "Session {} of {}",
+                                    app.current_session, app.target_sessions
+                                ),
+                                &app.pet.catchphrase,
+                            );
                         }
                     }
                 }
@@ -700,12 +731,12 @@ fn main_frame(frame: &mut Frame, app: &App) {
 
             let timer_content = format!(
                 "\n{}{} \n\n\
-                 ┌─────────────┐\n\
-                 │   {}   │\n\
-                 └─────────────┘\n\n\
-                 Session: {} / {}\n\
-                 Break Target: {} mins\n\n\
-                 Controls: [p] Pause | [c] Continue | [f] Interact | [q] Quit",
+                  ┌─────────────┐\n\
+                  │   {}   │\n\
+                  └─────────────┘\n\n\
+                  Session: {} / {}\n\
+                  Break Target: {} mins\n\n\
+                  Controls: [p] Pause | [c] Continue | [f] Interact | [q] Quit",
                 phase_title,
                 status_str,
                 time_str,
@@ -759,10 +790,10 @@ fn main_frame(frame: &mut Frame, app: &App) {
 
             let complete_content = format!(
                 "\n🎉 Yeeee onek kisu sira laiso yeee! 🎉\n\n\
-                 Total Sessions Finished: {}\n\n\
-                 Amazing discipline and deep focus!\n\
-                 Time to celebrate or take a well-earned rest.\n\n\
-                 > Press [Enter] or [q] to return to Main Menu",
+                  Total Sessions Finished: {}\n\n\
+                  Amazing discipline and deep focus!\n\
+                  Time to celebrate or take a well-earned rest.\n\n\
+                  > Press [Enter] or [q] to return to Main Menu",
                 app.target_sessions
             );
 
@@ -811,3 +842,4 @@ fn select_lines(app: &App) -> Vec<Line<'_>> {
     }
     lines
 }
+
