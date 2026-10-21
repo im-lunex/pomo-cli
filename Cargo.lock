@@ -1494,6 +1494,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "pmd-cli"
+version = "0.1.0"
+dependencies = [
+ "color-eyre",
+ "crossterm 0.29.0",
+ "indicatif",
+ "notify-rust",
+ "ratatui 0.30.2",
+ "serde",
+ "toml",
+ "tui-textarea",
+]
+
+[[package]]
 name = "polling"
 version = "3.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1505,20 +1519,6 @@ dependencies = [
  "pin-project-lite",
  "rustix 1.1.5",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "pomo-cli"
-version = "0.1.0"
-dependencies = [
- "color-eyre",
- "crossterm 0.29.0",
- "indicatif",
- "notify-rust",
- "ratatui 0.30.2",
- "serde",
- "toml",
- "tui-textarea",
 ]
 
 [[package]]
